@@ -389,11 +389,12 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 		// create the full path to the file by prepending the site root
 		fullPattern := caddyhttp.SanitizedPathJoin(root, beforeSplit)
 
-		// expand glob expressions, but not on Windows because Glob() doesn't
-		// support escaping on Windows due to path separator)
+		// Literal paths are checked by the selection policy below. Globbing
+		// them would perform a redundant stat. Windows paths cannot be globbed
+		// because the path separator conflicts with escaping.
 		var globResults []string
-		if runtime.GOOS == "windows" {
-			globResults = []string{fullPattern} // precious Windows
+		if runtime.GOOS == "windows" || !strings.ContainsAny(fullPattern, `*?[\`) {
+			globResults = []string{fullPattern}
 		} else {
 			globResults, err = fs.Glob(fileSystem, fullPattern)
 			if err != nil {

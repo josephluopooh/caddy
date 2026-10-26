@@ -16,6 +16,7 @@ package fileserver
 
 import (
 	"context"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -24,6 +25,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"testing/fstest"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/internal/filesystems"
@@ -36,6 +39,68 @@ type testCase struct {
 	expectedPath string
 	expectedType string
 	matched      bool
+}
+
+type countingOpenFS struct {
+	fs.FS
+	opens int
+}
+
+func (f *countingOpenFS) Open(name string) (fs.File, error) {
+	f.opens++
+	return f.FS.Open(name)
+}
+
+func TestFileMatcherLiteralCandidateSingleStat(t *testing.T) {
+	for _, policy := range []string{tryPolicyFirstExist, tryPolicyLargestSize, tryPolicySmallestSize, tryPolicyMostRecentlyMod} {
+		for _, tc := range []struct {
+			name, pattern string
+			wantMatch     bool
+		}{
+			{name: "literal", pattern: "foo.php", wantMatch: true},
+			{name: "placeholder", pattern: "{test.file}", wantMatch: true},
+			{name: "split", pattern: "foo.php/more", wantMatch: true},
+			{name: "missing", pattern: "missing.php", wantMatch: false},
+		} {
+			t.Run(policy+"/"+tc.name, func(t *testing.T) {
+				fileSystem := &countingOpenFS{FS: fstest.MapFS{
+					"foo.php": {Data: []byte("test"), ModTime: time.Unix(1, 0)},
+				}}
+				fsmap := &filesystems.FileSystemMap{}
+				fsmap.Register("test", fileSystem)
+				matcher := MatchFile{
+					Root: ".", FileSystem: "test", fsmap: fsmap,
+					TryFiles: []string{tc.pattern}, TryPolicy: policy,
+					SplitPath: []string{".php"},
+				}
+				req := httptest.NewRequest(http.MethodGet, "/foo.php", nil)
+				repl := caddyhttp.NewTestReplacer(req)
+				repl.Set("test.file", "foo.php")
+				matched, err := matcher.MatchWithError(req)
+				if err != nil || matched != tc.wantMatch {
+					t.Fatalf("MatchWithError = %v, %v; want %v, nil", matched, err, tc.wantMatch)
+				}
+				if fileSystem.opens != 1 {
+					t.Errorf("candidate required %d filesystem opens; want one", fileSystem.opens)
+				}
+			})
+		}
+	}
+}
+
+func BenchmarkFileMatcherLiteralCandidate(b *testing.B) {
+	matcher := MatchFile{
+		Root: "./testdata", TryFiles: []string{"foo.txt"},
+		fsmap: &filesystems.FileSystemMap{},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/foo.txt", nil)
+	caddyhttp.NewTestReplacer(req)
+	for b.Loop() {
+		matched, err := matcher.MatchWithError(req)
+		if err != nil || !matched {
+			b.Fatalf("MatchWithError = %v, %v; want true, nil", matched, err)
+		}
+	}
 }
 
 func TestFileMatcher(t *testing.T) {
