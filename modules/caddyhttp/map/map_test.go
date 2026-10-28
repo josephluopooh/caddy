@@ -93,6 +93,7 @@ func TestHandler(t *testing.T) {
 	for i, tc := range []struct {
 		handler Handler
 		reqURI  string
+		vars    map[string]any
 		expect  map[string]any
 	}{
 		{
@@ -177,6 +178,52 @@ func TestHandler(t *testing.T) {
 			},
 		},
 		{
+			reqURI: "/xyz",
+			handler: Handler{
+				Source:       "{http.request.uri.path}",
+				Destinations: []string{"{output}"},
+				Mappings: []Mapping{
+					{InputRegexp: "/(xyz)", Outputs: []any{"{testvar}-${1}"}},
+				},
+			},
+			expect: map[string]any{"output": "testing-xyz"},
+		},
+		{
+			reqURI: "/xyz",
+			vars:   map[string]any{"source": "/{testvar}"},
+			handler: Handler{
+				Source:       "{source}",
+				Destinations: []string{"{output}"},
+				Mappings: []Mapping{
+					{InputRegexp: "/(.+)", Outputs: []any{"$1"}},
+				},
+			},
+			expect: map[string]any{"output": "{testvar}"},
+		},
+		{
+			reqURI: "/xyz",
+			vars:   map[string]any{"testvar": "$1"},
+			handler: Handler{
+				Source:       "{http.request.uri.path}",
+				Destinations: []string{"{output}"},
+				Mappings: []Mapping{
+					{InputRegexp: "/(xyz)", Outputs: []any{"{testvar}-${1}"}},
+				},
+			},
+			expect: map[string]any{"output": "$1-xyz"},
+		},
+		{
+			reqURI: "/xyz",
+			handler: Handler{
+				Source:       "{http.request.uri.path}",
+				Destinations: []string{"{output}"},
+				Mappings: []Mapping{
+					{InputRegexp: "/(xyz)", Outputs: []any{"{unknown}-${1}"}},
+				},
+			},
+			expect: map[string]any{"output": "{unknown}-xyz"},
+		},
+		{
 			reqURI: "/foo",
 			handler: Handler{
 				Source:       "{http.request.uri.path}",
@@ -209,6 +256,9 @@ func TestHandler(t *testing.T) {
 		}
 		repl := caddyhttp.NewTestReplacer(req)
 		repl.Set("testvar", "testing")
+		for key, value := range tc.vars {
+			repl.Set(key, value)
+		}
 		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
 

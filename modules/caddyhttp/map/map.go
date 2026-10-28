@@ -148,13 +148,11 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 
 			// evaluate regular expression if configured
 			if m.re != nil {
-				var result []byte
 				matches := m.re.FindStringSubmatchIndex(input)
 				if matches == nil {
 					continue
 				}
-				result = m.re.ExpandString(result, outputStr, input, matches)
-				return string(result), true
+				return expandRegexpOutput(m.re, outputStr, input, matches, repl), true
 			}
 
 			// otherwise simple string comparison
@@ -172,6 +170,41 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 	})
 
 	return next.ServeHTTP(w, r)
+}
+
+// expandRegexpOutput resolves placeholders in operator-written output without
+// re-evaluating placeholders or regexp references introduced by captured data.
+// Braces preceded by '$' belong to regexp capture references such as ${1}.
+func expandRegexpOutput(re *regexp.Regexp, output, input string, matches []int, repl *caddy.Replacer) string {
+	var result []byte
+	start := 0
+	for i := 0; i < len(output); i++ {
+		if output[i] != '{' || (i > 0 && (output[i-1] == '$' || output[i-1] == '\\')) {
+			continue
+		}
+		end := strings.IndexByte(output[i+1:], '}')
+		if end < 0 {
+			continue
+		}
+		end += i + 1
+		for end < len(output)-1 && output[end-1] == '\\' {
+			next := strings.IndexByte(output[end+1:], '}')
+			if next < 0 {
+				end = -1
+				break
+			}
+			end += next + 1
+		}
+		if end < 0 {
+			continue
+		}
+
+		result = re.ExpandString(result, output[start:i], input, matches)
+		result = append(result, repl.ReplaceKnown(output[i:end+1], "")...)
+		start = end + 1
+		i = end
+	}
+	return string(re.ExpandString(result, output[start:], input, matches))
 }
 
 // Mapping describes a mapping from input to outputs.
