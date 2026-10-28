@@ -200,7 +200,7 @@ func expandRegexpOutput(re *regexp.Regexp, output, input string, matches []int, 
 		}
 
 		result = re.ExpandString(result, output[start:i], input, matches)
-		result = append(result, repl.ReplaceKnown(output[i:end+1], "")...)
+		result = append(result, repl.ReplaceAll(output[i:end+1], "")...)
 		start = end + 1
 		i = end
 	}

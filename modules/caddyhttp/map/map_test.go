@@ -221,7 +221,7 @@ func TestHandler(t *testing.T) {
 					{InputRegexp: "/(xyz)", Outputs: []any{"{unknown}-${1}"}},
 				},
 			},
-			expect: map[string]any{"output": "{unknown}-xyz"},
+			expect: map[string]any{"output": "-xyz"},
 		},
 		{
 			reqURI: "/foo",
