@@ -137,10 +137,15 @@ func (c *httpRedirectConn) Read(p []byte) (int, error) {
 		return 0, fmt.Errorf("couldn't read HTTP request")
 	}
 
-	// Build the redirect response, using the same Host and URL,
-	// but replacing the scheme with https.
+	// Build the redirect response, using the same Host and request target,
+	// but replacing the scheme with https. RequestURI returns the path and
+	// query for absolute-form targets rather than the full URL.
+	target := req.URL.RequestURI()
+	if req.RequestURI == "*" {
+		target = "/"
+	}
 	headers := make(http.Header)
-	headers.Add("Location", "https://"+req.Host+req.URL.String())
+	headers.Add("Location", "https://"+req.Host+target)
 	resp := &http.Response{
 		Proto:      "HTTP/1.0",
 		Status:     "308 Permanent Redirect",
@@ -162,7 +167,7 @@ func (c *httpRedirectConn) Read(p []byte) (int, error) {
 // looks like it might've been a misdirected plaintext HTTP request.
 func firstBytesLookLikeHTTP(hdr []byte) bool {
 	switch string(hdr[:5]) {
-	case "GET /", "HEAD ", "POST ", "PUT /", "OPTIO":
+	case "GET /", "GET h", "HEAD ", "POST ", "PUT /", "OPTIO":
 		return true
 	}
 	return false
